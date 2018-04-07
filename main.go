@@ -62,15 +62,32 @@ func handleHttp(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleMessage(message string, w http.ResponseWriter) {
+	if len(params) < 2 { return }
+
 	params := strings.Split(message, "/")
-
-	if len(params) == 0 { w.Write([]byte("T")) }
-
-	_, err := strconv.ParseInt(params[0], 10, 64)
+	idString, method, params := params[0], params[1], params[2:]
+	gameId, err := strconv.ParseInt(idString, 10, 64)
 
 	if err != nil { return }
+	if gameState, err := globalState.liveGames[gameId]; err != nil { return }
 
-	w.Write([]byte(message))
+	switch method {
+	case "get_game":
+		getGame(gameState, w)
+	case "unlock_param":
+		if (len(params) == 0) { return }
+		flightInfoId, err := strconv.parseInt(params[0], 10, 32)
+		if err != nil { return }
+		unlockParam(gameState, , w)
+	case "guess_country":
+		if (len(params) == 0) { return }
+		countryId, err := strconv.parseInt(params[0], 10, 8)
+		if err != nil { return }
+		guessCountry(gameState, countryId, w)
+	case "unlock_flight":
+		if (len(params) == 0) { return }
+		unlockFlight(gameState, params[0], w)
+	}
 }
 
 func handleNewClient(w http.ResponseWriter) {
