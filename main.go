@@ -6,28 +6,30 @@ import (
 	"strings"
 	"strconv"
 	"math/rand"
+	"time"
+	"encoding/json"
 )
 
 type GlobalState struct {
 	liveGames    map[int64]GameState
 	countryNames map[byte]string
-	r            rand.Rand
 	highscores   []int32
 }
 
 type FlightInfo struct {
-	unlock_cost int32
-	param_value int32
-	is_unlocked bool
+	unlockCost int32
+	paramValue int32
+	isUnlocked bool
 }
 
 type GameState struct {
-	prev_country_ids  []byte
-	last_timestamp    int64
-	score             int32
-	current_country   byte
-	countries_guessed []byte
-	cities_received   []FlightInfo
+	gameId           int64
+	prevCountryIds   []byte
+	lastTimestamp    int64
+	score            int32
+	currentCountry   byte
+	countriesGuessed []byte
+	citiesReceived   []FlightInfo
 }
 
 var globalState GlobalState
@@ -37,13 +39,13 @@ func handleHttp(w http.ResponseWriter, r *http.Request) {
 	message = strings.TrimPrefix(message, "/")
 
 	if (len(message) == 0) {
-		handleNewClient(w, r)
+	handleNewClient(w, r)
 	} else {
 		handleMessage(message, w, r)
 	}
 }
 
-func handleMessage(message string, http.ResponseWriter, r *http.Request) {
+func handleMessage(message string, w http.ResponseWriter, r *http.Request) {
 	params := strings.Split(message, "/")
 
 	w.Write([]byte(fmt.Sprintf("\"%s\"\n", message)))
@@ -57,9 +59,39 @@ func handleMessage(message string, http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(message))
 }
 
+func handleNewClient(w http.ResponseWriter, r *http.Request) {
+	//get new id
+	newId := rand.Int63()
+
+	//make sure that new id is not in the map ( although very unlikely )
+	_, ok := globalState.liveGames[newId];
+	for ok {
+		newId = rand.Int63()
+		_, ok = globalState.liveGames[newId];
+	}
+
+	var newGameState GameState
+	newGameState.lastTimestamp = time.Now().Unix()
+	newGameState.score = 0
+	newGameState.currentCountry = byte(rand.Int() % 195)
+	newGameState.prevCountryIds = nil
+	newGameState.citiesReceived = nil
+	newGameState.countriesGuessed = nil
+	newGameState.gameId = newId
+
+	globalState.liveGames[newId] = newGameState
+
+	bytes, _ := json.Marshal(newGameState)
+
+	w.Write(bytes)
+
+}
+
 func main() {
 	globalState.liveGames = make(map[int64]GameState)
 	globalState.countryNames = make(map[byte]string)
+	globalState.highscores = nil
+
 	http.HandleFunc("/", handleHttp)
 	if err := http.ListenAndServe(":8080", nil); err != nil {
 		panic(err)
