@@ -3,7 +3,15 @@ package main
 import (
 	"net/http"
 	"strings"
+	"math/rand"
 )
+
+type GlobalState struct {
+	liveThreads map[int64]GameState
+	countryNames map[byte]string
+	r rand.Rand
+	highscores []int32
+}
 
 type FlightInfo struct {
 	unlock_cost int32
