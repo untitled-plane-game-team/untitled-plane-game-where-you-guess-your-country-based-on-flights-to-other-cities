@@ -19,7 +19,6 @@ type GlobalState struct {
 type FlightInfo struct {
 	UnlockCost int32
 	ParamValue int32
-	IsUnlocked bool
 }
 
 type GameState struct {
@@ -29,10 +28,27 @@ type GameState struct {
 	Score            int32
 	currentCountry   uint16
 	CountriesGuessed []uint16
-	CitiesReceived   []FlightInfo
+	CitiesReceived   []string
+	FlightData       []FlightInfo
 }
 
 var globalState GlobalState
+
+func getGame(GameState gameState, w http.ResponseWriter) {
+
+}
+
+func unlockParam(GameState gameState, int32 flightInfoId, w http.ResponseWriter) {
+
+}
+
+func guessCountry(GameState gameState, byte countryIndex) {
+
+}
+
+func unlockFlight(GameState gameState, string city) {
+
+}
 
 func handleHttp(w http.ResponseWriter, r *http.Request) {
 	message := r.URL.Path
@@ -45,7 +61,7 @@ func handleHttp(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func handleMessage(message string, w http.ResponseWriter, r *http.Request) {
+func handleMessage(message string, w http.ResponseWriter) {
 	params := strings.Split(message, "/")
 
 	if len(params) == 0 { w.Write([]byte("T")) }
@@ -57,7 +73,7 @@ func handleMessage(message string, w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(message))
 }
 
-func handleNewClient(w http.ResponseWriter, _ *http.Request) {
+func handleNewClient(w http.ResponseWriter) {
 	//get new id
 	newId := rand.Int63()
 
