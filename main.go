@@ -39,7 +39,7 @@ func handleHttp(w http.ResponseWriter, r *http.Request) {
 	message = strings.TrimPrefix(message, "/")
 
 	if (len(message) == 0) {
-	handleNewClient(w, r)
+		handleNewClient(w, r)
 	} else {
 		handleMessage(message, w, r)
 	}
@@ -48,8 +48,6 @@ func handleHttp(w http.ResponseWriter, r *http.Request) {
 func handleMessage(message string, w http.ResponseWriter, r *http.Request) {
 	params := strings.Split(message, "/")
 
-	w.Write([]byte(fmt.Sprintf("\"%s\"\n", message)))
-	w.Write([]byte(fmt.Sprintf("%d\n", len(params))))
 	if len(params) == 0 { w.Write([]byte("T")) }
 
 	_, err := strconv.ParseInt(params[0], 10, 64)
