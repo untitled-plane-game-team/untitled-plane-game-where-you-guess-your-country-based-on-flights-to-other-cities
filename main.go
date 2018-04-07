@@ -12,24 +12,24 @@ import (
 
 type GlobalState struct {
 	liveGames    map[int64]GameState
-	countryNames map[byte]string
+	countryNames map[uint16]string
 	highscores   []int32
 }
 
 type FlightInfo struct {
-	unlockCost int32
-	paramValue int32
-	isUnlocked bool
+	UnlockCost int32
+	ParamValue int32
+	IsUnlocked bool
 }
 
 type GameState struct {
-	gameId           int64
-	prevCountryIds   []byte
-	lastTimestamp    int64
-	score            int32
-	currentCountry   byte
-	countriesGuessed []byte
-	citiesReceived   []FlightInfo
+	GameId           int64
+	PrevCountryIds   []uint16
+	LastTimestamp    int64
+	Score            int32
+	currentCountry   uint16
+	CountriesGuessed []uint16
+	CitiesReceived   []FlightInfo
 }
 
 var globalState GlobalState
@@ -59,7 +59,7 @@ func handleMessage(message string, w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(message))
 }
 
-func handleNewClient(w http.ResponseWriter, r *http.Request) {
+func handleNewClient(w http.ResponseWriter, _ *http.Request) {
 	//get new id
 	newId := rand.Int63()
 
@@ -71,13 +71,13 @@ func handleNewClient(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var newGameState GameState
-	newGameState.lastTimestamp = time.Now().Unix()
-	newGameState.score = 0
-	newGameState.currentCountry = byte(rand.Int() % 195)
-	newGameState.prevCountryIds = nil
-	newGameState.citiesReceived = nil
-	newGameState.countriesGuessed = nil
-	newGameState.gameId = newId
+	newGameState.LastTimestamp = time.Now().Unix()
+	newGameState.Score = 0
+	newGameState.currentCountry = uint16(rand.Int31() % 195)
+	newGameState.PrevCountryIds = []uint16{}
+	newGameState.CitiesReceived = []FlightInfo{}
+	newGameState.CountriesGuessed = []uint16{}
+	newGameState.GameId = newId
 
 	globalState.liveGames[newId] = newGameState
 
@@ -89,7 +89,7 @@ func handleNewClient(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	globalState.liveGames = make(map[int64]GameState)
-	globalState.countryNames = make(map[byte]string)
+	globalState.countryNames = make(map[uint16]string)
 	globalState.highscores = nil
 
 	http.HandleFunc("/", handleHttp)
