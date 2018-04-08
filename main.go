@@ -478,6 +478,8 @@ func unlockFlight(gameState GameState, city string, w http.ResponseWriter) {
 }
 
 func handleHttp(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", r.Header.Get("Origin"))
+	w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
 	message := r.URL.Path
 	message = strings.TrimPrefix(message, "/")
 
