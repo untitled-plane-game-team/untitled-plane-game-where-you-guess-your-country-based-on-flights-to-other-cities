@@ -12,6 +12,7 @@ import (
 	"sort"
 	"math"
 	"regexp"
+	"unsafe"
 )
 
 type GlobalState struct {
@@ -179,7 +180,7 @@ func guessCountry(gameState GameState, countryIndex uint16, w http.ResponseWrite
 type QuoteResults struct {
 	Quotes []struct {
 		QuoteID     int  `json:"QuoteId"`
-		MinPrice    int  `json:"MinPrice"`
+		MinPrice    float64  `json:"MinPrice"`
 		Direct      bool `json:"Direct"`
 		OutboundLeg struct {
 			CarrierIds    []int  `json:"CarrierIds"`
@@ -339,8 +340,8 @@ func getFlight(countryid uint16, from string, to string, date int64) (string, in
 	}
 
 	var quotes []struct {
-		price int
-		num int
+		price float64
+		num int32
 	}
 
 	targetPlaceId2 = targetPlaceId1
@@ -348,15 +349,15 @@ func getFlight(countryid uint16, from string, to string, date int64) (string, in
 
 	for _, value := range quotes1.Quotes {
 		//if value.OutboundLeg.DestinationID == targetPlaceId1 {
-			var num int
+			var num int32
 			if value.Direct {
 				num = 0
 			} else {
 				num = 1
 			}
 			var x struct {
-				price int
-				num int
+				price float64
+				num int32
 			}
 			x.price = value.MinPrice
 			x.num = num
@@ -368,15 +369,15 @@ func getFlight(countryid uint16, from string, to string, date int64) (string, in
 
 	for _, value := range quotes2.Quotes {
 		//if value.OutboundLeg.DestinationID == targetPlaceId2 {
-			var num int
+			var num int32
 			if value.Direct {
 				num = 0
 			} else {
 				num = 1
 			}
 			var x struct {
-				price int
-				num int
+				price float64
+				num int32
 			}
 			x.price = value.MinPrice
 			x.num = num
@@ -555,6 +556,9 @@ func handleNewClient(w http.ResponseWriter) {
 
 func main() {
 	initStuff()
+	var x int
+	x = -1
+	fmt.Println(unsafe.Sizeof(x))
 
 	http.HandleFunc("/", handleHttp)
 	if err := http.ListenAndServe(":8080", nil); err != nil {
