@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"net/http"
 	"strings"
 	"strconv"
@@ -32,22 +31,141 @@ type GameState struct {
 	FlightData       []FlightInfo
 }
 
+
+
 var globalState GlobalState
+var COST_WRONG_GUESS, COST_INFO_0, COST_INFO_1, COST_INFO_2, COST_INFO_3,
+COST_INFO_4, COST_INFO_5, COST_NEW_FLIGHT, REWARD_CORRECT_GUESS int32
 
-func getGame(GameState gameState, w http.ResponseWriter) {
-
+func initCosts() {
+	COST_WRONG_GUESS = 1000
+	COST_INFO_0 = 0
+	COST_INFO_1 = 0
+	COST_INFO_2 = 300
+	COST_INFO_3 = 300
+	COST_INFO_4 = 300
+	COST_INFO_5 = 300
+	COST_NEW_FLIGHT = 700
+	REWARD_CORRECT_GUESS = 26500
 }
 
-func unlockParam(GameState gameState, int32 flightInfoId, w http.ResponseWriter) {
+func getStrippedGameState(gameState GameState) GameState {
+	var newGameState GameState
 
+	newGameState.LastTimestamp = gameState.LastTimestamp
+	newGameState.Score = gameState.Score
+	//newGameState.currentCountry = nil
+	// Don't care for this information, won't get encoded anyway
+	newGameState.PrevCountryIds = []uint16{}
+	newGameState.CitiesReceived = []string{}
+	newGameState.FlightData = []FlightInfo{}
+	newGameState.CountriesGuessed = []uint16{}
+	newGameState.GameId = gameState.GameId
+
+	for _, value := range gameState.PrevCountryIds {
+		newGameState.PrevCountryIds = append(newGameState.PrevCountryIds, value)
+	}
+	for _, value := range gameState.CitiesReceived {
+		newGameState.CitiesReceived = append(newGameState.CitiesReceived, value)
+	}
+	for _, value := range gameState.CountriesGuessed {
+		newGameState.CountriesGuessed = append(newGameState.CountriesGuessed, value)
+	}
+	for _, value := range gameState.FlightData {
+		if value.UnlockCost != 0 {
+			value.ParamValue = 0
+		}
+		newGameState.FlightData = append(newGameState.FlightData, value)
+	}
+
+	return newGameState
 }
 
-func guessCountry(GameState gameState, byte countryIndex) {
-
+func getCountry() uint16 {
+	return uint16(rand.Int31() % 195)
 }
 
-func unlockFlight(GameState gameState, string city) {
+func getGame(gameState GameState, w http.ResponseWriter) {
+	bytes, _ := json.Marshal(getStrippedGameState(gameState))
+	w.Write(bytes)
+}
 
+func unlockParam(gameState GameState, flightInfoId int32, w http.ResponseWriter) {
+	gameState.LastTimestamp = time.Now().Unix()
+	gameState.Score -= gameState.FlightData[flightInfoId].UnlockCost
+	gameState.FlightData[flightInfoId].UnlockCost = 0
+
+	getGame(gameState, w)
+}
+
+func util_inList(el uint16, list []uint16) bool {
+	for _, v := range list {
+		if v == el {
+			return true
+		}
+	}
+	return false
+}
+
+func startNewRound(gameState GameState, w http.ResponseWriter) {
+	gameState.LastTimestamp = time.Now().Unix()
+	//oldCountry := gameState.currentCountry
+
+	gameState.Score += REWARD_CORRECT_GUESS
+	gameState.PrevCountryIds = append(gameState.PrevCountryIds, gameState.currentCountry)
+	gameState.CountriesGuessed = []uint16{}
+	gameState.CitiesReceived = []string{}
+	gameState.FlightData = []FlightInfo{}
+	gameState.currentCountry = getCountry()
+
+
+	for util_inList(gameState.currentCountry, gameState.PrevCountryIds)  {
+		// while in list of already guessed countried, get a new one
+		gameState.currentCountry = getCountry()
+	}
+
+
+
+	globalState.liveGames[gameState.GameId] = gameState
+
+	getGame(gameState, w)
+}
+
+func guessCountry(gameState GameState, countryIndex uint16, w http.ResponseWriter) {
+	if countryIndex == gameState.currentCountry {
+		startNewRound(gameState, w)
+	} else {
+		gameState.LastTimestamp = time.Now().Unix()
+		gameState.Score -= COST_WRONG_GUESS
+		globalState.liveGames[gameState.GameId] = gameState
+		getGame(gameState, w)
+	}
+}
+
+func unlockFlight(gameState GameState, city string, w http.ResponseWriter) {
+	gameState.LastTimestamp = time.Now().Unix()
+	// TODO : make an actual API call, process that
+
+	var API_cityName string
+	var API_cheapestCost int32
+	var API_cheapestTime int32
+	var API_cheapestStops int32
+	var API_averageCost int32
+	var API_averageTime int32
+	var API_averageStops int32
+
+	gameState.CitiesReceived = append(gameState.CitiesReceived, API_cityName)
+	gameState.FlightData = append(gameState.FlightData, FlightInfo{COST_INFO_0, API_cheapestCost})
+	gameState.FlightData = append(gameState.FlightData, FlightInfo{COST_INFO_1, API_cheapestTime})
+	gameState.FlightData = append(gameState.FlightData, FlightInfo{COST_INFO_2, API_cheapestStops})
+	gameState.FlightData = append(gameState.FlightData, FlightInfo{COST_INFO_3, API_averageCost})
+	gameState.FlightData = append(gameState.FlightData, FlightInfo{COST_INFO_4, API_averageTime})
+	gameState.FlightData = append(gameState.FlightData, FlightInfo{COST_INFO_5, API_averageStops})
+	gameState.Score -= COST_NEW_FLIGHT
+
+	globalState.liveGames[gameState.GameId] = gameState
+
+	getGame(gameState, w)
 }
 
 func handleHttp(w http.ResponseWriter, r *http.Request) {
@@ -55,9 +173,9 @@ func handleHttp(w http.ResponseWriter, r *http.Request) {
 	message = strings.TrimPrefix(message, "/")
 
 	if (len(message) == 0) {
-		handleNewClient(w, r)
+		handleNewClient(w)
 	} else {
-		handleMessage(message, w, r)
+		handleMessage(message, w)
 	}
 }
 
@@ -104,21 +222,21 @@ func handleNewClient(w http.ResponseWriter) {
 	var newGameState GameState
 	newGameState.LastTimestamp = time.Now().Unix()
 	newGameState.Score = 0
-	newGameState.currentCountry = uint16(rand.Int31() % 195)
+	newGameState.currentCountry = getCountry()
 	newGameState.PrevCountryIds = []uint16{}
-	newGameState.CitiesReceived = []FlightInfo{}
+	newGameState.CitiesReceived = []string{}
+	newGameState.FlightData = []FlightInfo{}
 	newGameState.CountriesGuessed = []uint16{}
 	newGameState.GameId = newId
 
 	globalState.liveGames[newId] = newGameState
 
-	bytes, _ := json.Marshal(newGameState)
-
-	w.Write(bytes)
+	getGame(globalState.liveGames[newId], w)
 
 }
 
 func main() {
+	initCosts()
 	globalState.liveGames = make(map[int64]GameState)
 	globalState.countryNames = make(map[uint16]string)
 	globalState.highscores = nil
