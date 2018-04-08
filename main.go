@@ -9,11 +9,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"sort"
+	"math"
 )
 
 type GlobalState struct {
 	liveGames    map[int64]GameState
 	countryNames map[uint16]string
+	countryCodes map[uint16]string
 	highscores   []int32
 }
 
@@ -46,7 +49,7 @@ type CountryCodes struct {
 	} `json:"Countries"`
 }
 
-func init() {
+func initStuff() {
 	COST_WRONG_GUESS = 1000
 	COST_INFO_0 = 0
 	COST_INFO_1 = 0
@@ -57,12 +60,19 @@ func init() {
 	COST_NEW_FLIGHT = 700
 	REWARD_CORRECT_GUESS = 26500
 
+	globalState.liveGames = make(map[int64]GameState)
+	globalState.countryNames = make(map[uint16]string)
+	globalState.countryCodes = make(map[uint16]string)
+	globalState.highscores = nil
+
 	fileData, _ := ioutil.ReadFile("Countries.json")
 	var ccodes CountryCodes
 	_ = json.Unmarshal(fileData, &ccodes)
 
 	for _, value := range ccodes.Countries {
-		globalState.countryNames[uint16(value.Code[0] - 'A') * 16 + uint16(value.Code[1] - 'A')] = value.Name
+		id := uint16(value.Code[0] - 'A') * 16 + uint16(value.Code[1] - 'A')
+		globalState.countryNames[id] = value.Name
+		globalState.countryCodes[id] = value.Code
 	}
 
 }
@@ -101,14 +111,14 @@ func getStrippedGameState(gameState GameState) GameState {
 
 func getCountry() uint16 {
 	target :=  uint16(rand.Int31() % 256)
-	for length(globalState.countryNames[target]) < 2 {
+	for len(globalState.countryNames[target]) < 2 {
 		target = uint16(rand.Int31() % 256)
 	}
 	return target
 }
 
 func getGame(gameState GameState, w http.ResponseWriter) {
-	bytes, _ := json.Marshal(getStrippedGameState(gameState))
+	bytes, _ := json.Marshal(gameState)//getStrippedGameState(gameState))
 	w.Write(bytes)
 }
 
@@ -165,25 +175,277 @@ func guessCountry(gameState GameState, countryIndex uint16, w http.ResponseWrite
 }
 
 
+type QuoteResults struct {
+	Quotes []struct {
+		QuoteID     int  `json:"QuoteId"`
+		MinPrice    int  `json:"MinPrice"`
+		Direct      bool `json:"Direct"`
+		OutboundLeg struct {
+			CarrierIds    []int  `json:"CarrierIds"`
+			OriginID      int    `json:"OriginId"`
+			DestinationID int    `json:"DestinationId"`
+			DepartureDate string `json:"DepartureDate"`
+		} `json:"OutboundLeg"`
+		QuoteDateTime string `json:"QuoteDateTime"`
+	} `json:"Quotes"`
+	Places []struct {
+		PlaceID        int    `json:"PlaceId"`
+		IataCode       string `json:"IataCode"`
+		Name           string `json:"Name"`
+		Type           string `json:"Type"`
+		SkyscannerCode string `json:"SkyscannerCode"`
+		CityName       string `json:"CityName"`
+		CityID         string `json:"CityId"`
+		CountryName    string `json:"CountryName"`
+	} `json:"Places"`
+	Carriers []struct {
+		CarrierID int    `json:"CarrierId"`
+		Name      string `json:"Name"`
+	} `json:"Carriers"`
+	Currencies []struct {
+		Code                        string `json:"Code"`
+		Symbol                      string `json:"Symbol"`
+		ThousandsSeparator          string `json:"ThousandsSeparator"`
+		DecimalSeparator            string `json:"DecimalSeparator"`
+		SymbolOnLeft                bool   `json:"SymbolOnLeft"`
+		SpaceBetweenAmountAndSymbol bool   `json:"SpaceBetweenAmountAndSymbol"`
+		RoundingCoefficient         int    `json:"RoundingCoefficient"`
+		DecimalDigits               int    `json:"DecimalDigits"`
+	} `json:"Currencies"`
+}
 
-func getFlight(from string, to string, date int64) {
-	apimsg1 = fmt.Sprintf("reference/v1.0/countries/en-US?/browsequotes/v1.0/DK/EUR/en-US/%s/%s/%s?apikey=ha186359580606242767782573426762", from, to, time.Unix(int64, 0).Format("yyyy-mm"))
-	apimsg2 = fmt.Sprintf("reference/v1.0/countries/en-US?/browsequotes/v1.0/DK/EUR/en-US/%s/%s/%s?apikey=ha186359580606242767782573426762", from, to, time.Unix(int64, 0).Format("yyyy-mm"))
+type SimpleQuote struct {
+	price int
+	direct bool
+}
+
+type GoogleMapsApiResult struct {
+	Results []struct {
+		AddressComponents []struct {
+			LongName  string   `json:"long_name"`
+			ShortName string   `json:"short_name"`
+			Types     []string `json:"types"`
+		} `json:"address_components"`
+		FormattedAddress string `json:"formatted_address"`
+		Geometry         struct {
+			Bounds struct {
+				Northeast struct {
+					Lat float64 `json:"lat"`
+					Lng float64 `json:"lng"`
+				} `json:"northeast"`
+				Southwest struct {
+					Lat float64 `json:"lat"`
+					Lng float64 `json:"lng"`
+				} `json:"southwest"`
+			} `json:"bounds"`
+			Location struct {
+				Lat float64 `json:"lat"`
+				Lng float64 `json:"lng"`
+			} `json:"location"`
+			LocationType string `json:"location_type"`
+			Viewport     struct {
+				Northeast struct {
+					Lat float64 `json:"lat"`
+					Lng float64 `json:"lng"`
+				} `json:"northeast"`
+				Southwest struct {
+					Lat float64 `json:"lat"`
+					Lng float64 `json:"lng"`
+				} `json:"southwest"`
+			} `json:"viewport"`
+		} `json:"geometry"`
+		PlaceID string   `json:"place_id"`
+		Types   []string `json:"types"`
+	} `json:"results"`
+	Status string `json:"status"`
+}
 
 
+// haversin(θ) function
+func hsin(theta float64) float64 {
+	return math.Pow(math.Sin(theta/2), 2)
+}
+// http://en.wikipedia.org/wiki/Haversine_formula
+func Distance(lat1, lon1, lat2, lon2 float64) float64 {
+	var la1, lo1, la2, lo2, r float64
+	la1 = lat1 * math.Pi / 180
+	lo1 = lon1 * math.Pi / 180
+	la2 = lat2 * math.Pi / 180
+	lo2 = lon2 * math.Pi / 180
+
+	r = 6378100
+	h := hsin(la2-la1) + math.Cos(la1)*math.Cos(la2)*hsin(lo2-lo1)
+
+	return 2 * r * math.Asin(math.Sqrt(h))
+}
+
+
+func getFlight(countryid uint16, from string, to string, date int64) (string, int32, int32, int32, int32, int32, int32) {
+	apimsg1 := fmt.Sprintf("http://partners.api.skyscanner.net/apiservices/browsequotes/v1.0/DK/EUR/en-US/%s/%s/%s/?apikey=ha186359580606242767782573426762", from, to, time.Unix(date, 0).Format("yyyy-mm"))
+	apimsg2 := fmt.Sprintf("http://partners.api.skyscanner.net/apiservices/browsequotes/v1.0/DK/EUR/en-US/%s/%s/%s/?apikey=ha186359580606242767782573426762", from, to, time.Unix(date + 2592000, 0).Format("yyyy-mm"))
+
+	req1, err1 := http.NewRequest("GET", apimsg1, nil)
+	req2, err2 := http.NewRequest("GET", apimsg2, nil)
+
+	if err1 != nil || err2 != nil { return "Fuck1", 0, 0, 0, 0, 0 ,0 }
+
+	client1 := &http.Client{}
+	client2 := &http.Client{}
+
+	req1.Header.Set("Accept", "application/json")
+	req2.Header.Set("Accept", "application/json")
+
+	res1, err1 := client1.Do(req1)
+	res2, err2 := client2.Do(req2)
+
+	if err1 != nil {return "Fuck, " + err1.Error(), 0, 0, 0, 0, 0 ,0 }
+	if err2 != nil {return "Fuck2, " + err2.Error(), 0, 0, 0, 0, 0, 0}
+
+	defer res1.Body.Close()
+	defer res2.Body.Close()
+
+	var quotes1 QuoteResults
+	var quotes2 QuoteResults
+
+	json.NewDecoder(res1.Body).Decode(&quotes1)
+	json.NewDecoder(res2.Body).Decode(&quotes2)
+
+	var targetPlaceId1 int
+	var targetPlaceId2 int
+	var cityName string
+
+	for _, value := range quotes1.Places {
+		if value.CityID == to {
+			//t, _ := strconv.ParseInt(value.PlaceID, 10, 32)
+			targetPlaceId1 = value.PlaceID
+		}
+	}
+	for _, value := range quotes2.Places {
+		if value.CityID == to {
+			//t, _ := strconv.ParseInt(value.CityID)
+			targetPlaceId2 = value.PlaceID
+			cityName = value.CityName
+		}
+	}
+
+	type location struct{
+		lat float64
+		lon float64
+	}
+
+	var quotes []struct {
+		price int
+		num int
+	}
+
+
+	for _, value := range quotes1.Quotes {
+		if value.OutboundLeg.DestinationID == targetPlaceId1 {
+			var num int
+			if value.Direct {
+				num = 0
+			} else {
+				num = 1
+			}
+			var x struct {
+				price int
+				num int
+			}
+			x.price = value.MinPrice
+			x.num = num
+
+			quotes = append(quotes, x)
+
+		}
+	}
+
+	for _, value := range quotes2.Quotes {
+		if value.OutboundLeg.DestinationID == targetPlaceId2 {
+			var num int
+			if value.Direct {
+				num = 0
+			} else {
+				num = 1
+			}
+			var x struct {
+				price int
+				num int
+			}
+			x.price = value.MinPrice
+			x.num = num
+
+			quotes = append(quotes, x)
+		}
+	}
+
+
+	sort.Slice(quotes, func(i, j int) bool { return quotes[i].price < quotes[j].price })
+	median := len(quotes) / 2
+
+	apiurl := "https://maps.googleapis.com/maps/api/geocode/json?address=\"%s\"&key=AIzaSyA6izjWGjbepQaujh4le5VdcO7vMG1NFQo"
+
+	req1, err1 = http.NewRequest("GET", fmt.Sprintf(apiurl, globalState.countryNames[countryid]) + ", Capital", nil)
+	req2, err2 = http.NewRequest("GET", fmt.Sprintf(apiurl, cityName), nil)
+
+
+
+
+	if err1 != nil || err2 != nil { return "", 0, 0, 0, 0, 0 ,0 }
+
+	client1 = &http.Client{}
+	client2 = &http.Client{}
+
+
+	res1, err1 = client1.Do(req1)
+	res2, err2 = client2.Do(req2)
+
+
+	if err1 != nil || err2 != nil { return "", 0, 0, 0, 0, 0 ,0 }
+
+	defer res1.Body.Close()
+	defer res2.Body.Close()
+
+	var loc0 GoogleMapsApiResult
+	var loc1 GoogleMapsApiResult
+
+	json.NewDecoder(res1.Body).Decode(&loc0)
+	json.NewDecoder(res2.Body).Decode(&loc1)
+
+
+	var lat0, lon0, lat1, lon1 float64
+	/*
+	lat0 = loc0.Results[0].Geometry.Location.Lat
+	lon0 = loc0.Results[0].Geometry.Location.Lng
+	lat1 = loc1.Results[0].Geometry.Location.Lat
+	lon1 = loc1.Results[0].Geometry.Location.Lng
+	*/
+	lat0 = 0
+	lon0 = 0
+	lat1 = 50
+	lon1 = float64(median)
+
+
+	//return "????", 0, 0, 0, 0, 0, 0
+
+	return cityName, int32(quotes[0].price), int32(Distance(lat0, lon0, lat1, lon1)/1000), int32(quotes[0].num),
+		//int32(quotes[median].price), int32(Distance(lat0, lon0, lat1, lon1)/1000), int32(quotes[median].num)
+		int32(quotes[0].price), int32(Distance(lat0, lon0, lat1, lon1)/1000), int32(quotes[0].num)
 }
 
 func unlockFlight(gameState GameState, city string, w http.ResponseWriter) {
 	gameState.LastTimestamp = time.Now().Unix()
 	// TODO : make an actual API call, process that
 
-	var API_cityName string
-	var API_cheapestCost int32
-	var API_cheapestTime int32
-	var API_cheapestStops int32
-	var API_averageCost int32
-	var API_averageTime int32
-	var API_averageStops int32
+	//countryString := fmt.Sprintf("%c%c", byte(gameState.currentCountry / 16) + 'A', byte(gameState.currentCountry % 16) + 'A')
+
+
+	API_cityName,
+	API_cheapestCost,
+	API_cheapestTime,
+	API_cheapestStops,
+	API_averageCost,
+	API_averageTime,
+	API_averageStops := getFlight(gameState.currentCountry, globalState.countryCodes[gameState.currentCountry], city, gameState.LastTimestamp)
 
 	gameState.CitiesReceived = append(gameState.CitiesReceived, API_cityName)
 	gameState.FlightData = append(gameState.FlightData, FlightInfo{COST_INFO_0, API_cheapestCost})
@@ -196,7 +458,7 @@ func unlockFlight(gameState GameState, city string, w http.ResponseWriter) {
 
 	globalState.liveGames[gameState.GameId] = gameState
 
-	getGame(gameState, w)
+	getGame(globalState.liveGames[gameState.GameId], w)
 }
 
 func handleHttp(w http.ResponseWriter, r *http.Request) {
@@ -220,24 +482,25 @@ func handleMessage(message string, w http.ResponseWriter) {
 
 	if err != nil { return }
 
-	gameState, err := globalState.liveGames[gameId];
-	if err != nil { return }
+	gameState, ok := globalState.liveGames[gameId];
+	if ok == false { return }
 
 	switch method {
 	case "get_game":
 		getGame(gameState, w)
+
 	case "unlock_param":
 		if (len(params) == 0) { return }
-		flightInfoId, err := strconv.parseInt(params[0], 10, 32)
+		flightInfoId, err := strconv.ParseInt(params[0], 10, 32)
 		if err != nil { return }
-
-		unlockParam(gameState, flightInfoId , w)
+		unlockParam(gameState, int32(flightInfoId), w)
 
 	case "guess_country":
 		if (len(params) == 0) { return }
-		countryId, err := strconv.parseInt(params[0], 10, 8)
+		countryId, err := strconv.ParseInt(params[0], 10, 8)
 		if err != nil { return }
-		guessCountry(gameState, countryId, w)
+		guessCountry(gameState, uint16(countryId), w)
+
 	case "unlock_flight":
 		if (len(params) == 0) { return }
 		unlockFlight(gameState, params[0], w)
@@ -272,10 +535,7 @@ func handleNewClient(w http.ResponseWriter) {
 }
 
 func main() {
-	initCosts()
-	globalState.liveGames = make(map[int64]GameState)
-	globalState.countryNames = make(map[uint16]string)
-	globalState.highscores = nil
+	initStuff()
 
 	http.HandleFunc("/", handleHttp)
 	if err := http.ListenAndServe(":8080", nil); err != nil {
