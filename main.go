@@ -15,7 +15,7 @@ import (
 )
 
 type GlobalState struct {
-	liveGames    map[int64]GameState
+	liveGames    map[string]GameState
 	countryNames map[uint16]string
 	countryCodes map[uint16]string
 	highscores   []int32
@@ -27,7 +27,7 @@ type FlightInfo struct {
 }
 
 type GameState struct {
-	GameId           int64
+	GameId           string
 	PrevCountryIds   []uint16
 	LastTimestamp    int64
 	Score            int32
@@ -57,16 +57,16 @@ func initStuff() {
 	COST_INFO_2 = 300
 	COST_INFO_3 = 300
 	COST_INFO_4 = 300
-	COST_INFO_5 = 300
 	COST_NEW_FLIGHT = 700
 	REWARD_CORRECT_GUESS = 26500
 
-	globalState.liveGames = make(map[int64]GameState)
+	globalState.liveGames = make(map[string]GameState)
 	globalState.countryNames = make(map[uint16]string)
 	globalState.countryCodes = make(map[uint16]string)
 	globalState.highscores = nil
-
+	COST_INFO_5 = 300
 	fileData, _ := ioutil.ReadFile("Countries.json")
+
 	var ccodes CountryCodes
 	_ = json.Unmarshal(fileData, &ccodes)
 
@@ -494,11 +494,9 @@ func handleMessage(message string, w http.ResponseWriter) {
 	if len(params) < 2 { return }
 
 	idString, method, params := params[0], params[1], params[2:]
-	gameId, err := strconv.ParseInt(idString, 10, 64)
 
-	if err != nil { return }
 
-	gameState, ok := globalState.liveGames[gameId];
+	gameState, ok := globalState.liveGames[idString];
 	if ok == false { return }
 
 	switch method {
@@ -525,14 +523,17 @@ func handleMessage(message string, w http.ResponseWriter) {
 
 func handleNewClient(w http.ResponseWriter) {
 	//get new id
-	newId := rand.Int63()
+	newId := fmt.Sprintf("%d", rand.Int63())
+
 
 	//make sure that new id is not in the map ( although very unlikely )
 	_, ok := globalState.liveGames[newId];
 	for ok {
-		newId = rand.Int63()
+		newId = fmt.Sprintf("%d", rand.Int63())
 		_, ok = globalState.liveGames[newId];
 	}
+
+	fmt.Println(newId)
 
 	var newGameState GameState
 	newGameState.LastTimestamp = time.Now().Unix()
