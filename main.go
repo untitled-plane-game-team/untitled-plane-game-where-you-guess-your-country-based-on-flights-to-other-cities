@@ -7,6 +7,8 @@ import (
 	"math/rand"
 	"time"
 	"encoding/json"
+	"fmt"
+	"io/ioutil"
 )
 
 type GlobalState struct {
@@ -37,7 +39,14 @@ var globalState GlobalState
 var COST_WRONG_GUESS, COST_INFO_0, COST_INFO_1, COST_INFO_2, COST_INFO_3,
 COST_INFO_4, COST_INFO_5, COST_NEW_FLIGHT, REWARD_CORRECT_GUESS int32
 
-func initCosts() {
+type CountryCodes struct {
+	Countries []struct {
+		Code string `json:"Code"`
+		Name string `json:"Name"`
+	} `json:"Countries"`
+}
+
+func init() {
 	COST_WRONG_GUESS = 1000
 	COST_INFO_0 = 0
 	COST_INFO_1 = 0
@@ -47,6 +56,15 @@ func initCosts() {
 	COST_INFO_5 = 300
 	COST_NEW_FLIGHT = 700
 	REWARD_CORRECT_GUESS = 26500
+
+	fileData, _ := ioutil.ReadFile("Countries.json")
+	var ccodes CountryCodes
+	_ = json.Unmarshal(fileData, &ccodes)
+
+	for _, value := range ccodes.Countries {
+		globalState.countryNames[uint16(value.Code[0] - 'A') * 16 + uint16(value.Code[1] - 'A')] = value.Name
+	}
+
 }
 
 func getStrippedGameState(gameState GameState) GameState {
@@ -82,7 +100,11 @@ func getStrippedGameState(gameState GameState) GameState {
 }
 
 func getCountry() uint16 {
-	return uint16(rand.Int31() % 195)
+	target :=  uint16(rand.Int31() % 256)
+	for length(globalState.countryNames[target]) < 2 {
+		target = uint16(rand.Int31() % 256)
+	}
+	return target
 }
 
 func getGame(gameState GameState, w http.ResponseWriter) {
@@ -142,6 +164,15 @@ func guessCountry(gameState GameState, countryIndex uint16, w http.ResponseWrite
 	}
 }
 
+
+
+func getFlight(from string, to string, date int64) {
+	apimsg1 = fmt.Sprintf("reference/v1.0/countries/en-US?/browsequotes/v1.0/DK/EUR/en-US/%s/%s/%s?apikey=ha186359580606242767782573426762", from, to, time.Unix(int64, 0).Format("yyyy-mm"))
+	apimsg2 = fmt.Sprintf("reference/v1.0/countries/en-US?/browsequotes/v1.0/DK/EUR/en-US/%s/%s/%s?apikey=ha186359580606242767782573426762", from, to, time.Unix(int64, 0).Format("yyyy-mm"))
+
+
+}
+
 func unlockFlight(gameState GameState, city string, w http.ResponseWriter) {
 	gameState.LastTimestamp = time.Now().Unix()
 	// TODO : make an actual API call, process that
@@ -188,7 +219,8 @@ func handleMessage(message string, w http.ResponseWriter) {
 	gameId, err := strconv.ParseInt(idString, 10, 64)
 
 	if err != nil { return }
-	if gameState, err := globalState.liveGames[gameId]; err != nil { return }
+
+	gameState, err := globalState.liveGames[gameId];
 	if err != nil { return }
 
 	switch method {
@@ -198,7 +230,9 @@ func handleMessage(message string, w http.ResponseWriter) {
 		if (len(params) == 0) { return }
 		flightInfoId, err := strconv.parseInt(params[0], 10, 32)
 		if err != nil { return }
-		unlockParam(gameState, flightInfoId, w)
+
+		unlockParam(gameState, flightInfoId , w)
+
 	case "guess_country":
 		if (len(params) == 0) { return }
 		countryId, err := strconv.parseInt(params[0], 10, 8)
