@@ -11,6 +11,7 @@ import (
 	"io/ioutil"
 	"sort"
 	"math"
+	"regexp"
 )
 
 type GlobalState struct {
@@ -214,11 +215,6 @@ type QuoteResults struct {
 	} `json:"Currencies"`
 }
 
-type SimpleQuote struct {
-	price int
-	direct bool
-}
-
 type GoogleMapsApiResult struct {
 	Results []struct {
 		AddressComponents []struct {
@@ -281,8 +277,13 @@ func Distance(lat1, lon1, lat2, lon2 float64) float64 {
 
 
 func getFlight(countryid uint16, from string, to string, date int64) (string, int32, int32, int32, int32, int32, int32) {
-	apimsg1 := fmt.Sprintf("http://partners.api.skyscanner.net/apiservices/browsequotes/v1.0/DK/EUR/en-US/%s/%s/%s/?apikey=ha186359580606242767782573426762", from, to, time.Unix(date, 0).Format("yyyy-mm"))
-	apimsg2 := fmt.Sprintf("http://partners.api.skyscanner.net/apiservices/browsequotes/v1.0/DK/EUR/en-US/%s/%s/%s/?apikey=ha186359580606242767782573426762", from, to, time.Unix(date + 2592000, 0).Format("yyyy-mm"))
+	str_date1 := fmt.Sprintf("%04d-%02d", time.Unix(date, 0).Year(), time.Unix(date, 0).Month())
+	str_date2 := fmt.Sprintf("%04d-%02d", time.Unix(date, 0).Year(), time.Unix(date + 2592000, 0).Month())
+	apimsg1 := "http://partners.api.skyscanner.net/apiservices/browsequotes/v1.0/DK/EUR/en-US/" + from + "/" + to +"/" + str_date1 + "/?apikey=ha186359580606242767782573426762"//, from, to, time.Unix(date, 0).Format("yyyy-mm"))
+	apimsg2 := "http://partners.api.skyscanner.net/apiservices/browsequotes/v1.0/DK/EUR/en-US/" + from + "/" + to +"/" + str_date2 + "/?apikey=ha186359580606242767782573426762"//, from, to, time.Unix(date + 2592000, 0).Format("yyyy-mm"))
+
+	fmt.Println(apimsg1)
+	fmt.Println(apimsg2)
 
 	req1, err1 := http.NewRequest("GET", apimsg1, nil)
 	req2, err2 := http.NewRequest("GET", apimsg2, nil)
@@ -295,8 +296,12 @@ func getFlight(countryid uint16, from string, to string, date int64) (string, in
 	req1.Header.Set("Accept", "application/json")
 	req2.Header.Set("Accept", "application/json")
 
+
 	res1, err1 := client1.Do(req1)
 	res2, err2 := client2.Do(req2)
+
+	fmt.Println(res1.StatusCode)
+	fmt.Println(res2.StatusCode)
 
 	if err1 != nil {return "Fuck, " + err1.Error(), 0, 0, 0, 0, 0 ,0 }
 	if err2 != nil {return "Fuck2, " + err2.Error(), 0, 0, 0, 0, 0, 0}
@@ -338,9 +343,11 @@ func getFlight(countryid uint16, from string, to string, date int64) (string, in
 		num int
 	}
 
+	targetPlaceId2 = targetPlaceId1
+	fmt.Sprintf("%d", targetPlaceId2)
 
 	for _, value := range quotes1.Quotes {
-		if value.OutboundLeg.DestinationID == targetPlaceId1 {
+		//if value.OutboundLeg.DestinationID == targetPlaceId1 {
 			var num int
 			if value.Direct {
 				num = 0
@@ -356,11 +363,11 @@ func getFlight(countryid uint16, from string, to string, date int64) (string, in
 
 			quotes = append(quotes, x)
 
-		}
+		//}
 	}
 
 	for _, value := range quotes2.Quotes {
-		if value.OutboundLeg.DestinationID == targetPlaceId2 {
+		//if value.OutboundLeg.DestinationID == targetPlaceId2 {
 			var num int
 			if value.Direct {
 				num = 0
@@ -375,17 +382,24 @@ func getFlight(countryid uint16, from string, to string, date int64) (string, in
 			x.num = num
 
 			quotes = append(quotes, x)
-		}
+		//}
 	}
 
 
 	sort.Slice(quotes, func(i, j int) bool { return quotes[i].price < quotes[j].price })
 	median := len(quotes) / 2
 
-	apiurl := "https://maps.googleapis.com/maps/api/geocode/json?address=\"%s\"&key=AIzaSyA6izjWGjbepQaujh4le5VdcO7vMG1NFQo"
+	re := regexp.MustCompile("\\s")
+	originloc := re.ReplaceAllString(globalState.countryNames[countryid], "%20")
 
-	req1, err1 = http.NewRequest("GET", fmt.Sprintf(apiurl, globalState.countryNames[countryid]) + ", Capital", nil)
-	req2, err2 = http.NewRequest("GET", fmt.Sprintf(apiurl, cityName), nil)
+	apiurl := "https://maps.googleapis.com/maps/api/geocode/json?address=\"" + originloc + "\"&key=AIzaSyA6izjWGjbepQaujh4le5VdcO7vMG1NFQo"
+	apiurl2 := "https://maps.googleapis.com/maps/api/geocode/json?address=\"" + re.ReplaceAllString(cityName, "%20") + "\"&key=AIzaSyA6izjWGjbepQaujh4le5VdcO7vMG1NFQo"
+
+	//fmt.Println(apiurl)
+	//fmt.Println(apiurl2)
+
+	req1, err1 = http.NewRequest("GET", apiurl, nil)
+	req2, err2 = http.NewRequest("GET", apiurl2, nil)
 
 
 
@@ -411,25 +425,27 @@ func getFlight(countryid uint16, from string, to string, date int64) (string, in
 	json.NewDecoder(res1.Body).Decode(&loc0)
 	json.NewDecoder(res2.Body).Decode(&loc1)
 
+	fmt.Println(loc0)
+	fmt.Println(loc1)
 
 	var lat0, lon0, lat1, lon1 float64
-	/*
+
 	lat0 = loc0.Results[0].Geometry.Location.Lat
 	lon0 = loc0.Results[0].Geometry.Location.Lng
 	lat1 = loc1.Results[0].Geometry.Location.Lat
 	lon1 = loc1.Results[0].Geometry.Location.Lng
-	*/
-	lat0 = 0
-	lon0 = 0
-	lat1 = 50
-	lon1 = float64(median)
+
+	//lat0 = 0
+	//lon0 = 0
+	//lat1 = 50
+	//lon1 = float64(median)
 
 
 	//return "????", 0, 0, 0, 0, 0, 0
 
 	return cityName, int32(quotes[0].price), int32(Distance(lat0, lon0, lat1, lon1)/1000), int32(quotes[0].num),
-		//int32(quotes[median].price), int32(Distance(lat0, lon0, lat1, lon1)/1000), int32(quotes[median].num)
-		int32(quotes[0].price), int32(Distance(lat0, lon0, lat1, lon1)/1000), int32(quotes[0].num)
+		int32(quotes[median].price), int32(Distance(lat0, lon0, lat1, lon1)/1000), int32(quotes[median].num)
+		//int32(quotes[0].price), int32(Distance(lat0, lon0, lat1, lon1)/1000), int32(quotes[0].num)
 }
 
 func unlockFlight(gameState GameState, city string, w http.ResponseWriter) {
@@ -520,7 +536,7 @@ func handleNewClient(w http.ResponseWriter) {
 
 	var newGameState GameState
 	newGameState.LastTimestamp = time.Now().Unix()
-	newGameState.Score = 0
+	newGameState.Score = 30000
 	newGameState.currentCountry = getCountry()
 	newGameState.PrevCountryIds = []uint16{}
 	newGameState.CitiesReceived = []string{}
